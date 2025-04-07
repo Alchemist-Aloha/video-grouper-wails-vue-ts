@@ -156,14 +156,28 @@ function log(message: string): void {
 async function selectBaseDirectory() {
   log("Requesting base directory selection from Go...");
   try {
-    const selectedDir = await SelectDirectory();
-    if (selectedDir) {
-      baseDirectory.value = selectedDir;
-      log(`Base directory set: ${selectedDir}`);
+    const videoPaths: string[] = await SelectDirectory();
+    if (videoPaths && videoPaths.length > 0) {
+      baseDirectory.value = videoPaths[0].substring(0, videoPaths[0].lastIndexOf('\\'));
+      log(`Base directory set: ${baseDirectory.value}`);
       videos.splice(0, videos.length);
       logMessages.value = [];
+
+      log(`Found ${videoPaths.length} video files. Generating thumbnails...`);
+      videoPaths.forEach((path) => {
+        videos.push({
+          id: videoIdCounter++,
+          file: { name: path.split('/').pop() || '', webkitRelativePath: path } as File,
+          thumbnail: null,
+          selected: false,
+          error: null,
+        });
+      });
+
+      await chunkGenerateThumbnails(videos);
+      log("Thumbnail generation complete.");
     } else {
-      log("Directory selection cancelled or failed.");
+      log("No videos found or directory selection cancelled.");
     }
   } catch (err: any) {
     log(`Error selecting directory: ${err}`);
@@ -231,12 +245,12 @@ async function handleFolderSelect(event: Event): Promise<void> {
 
 async function generateThumbnail(videoObject: VideoItem): Promise<void> {
   try {
-    if (!baseDirectory.value) {
-      throw new Error("Base directory is not set.");
-    }
+    // if (!baseDirectory.value) {
+    //   throw new Error("Base directory is not set.");
+    // }
 
-    const videoPath = videoObject.file.webkitRelativePath || videoObject.file.name;
-    const fullVideoPath = `${baseDirectory.value}/${videoPath}`.replace(/\\/g, '/');
+    // const videoPath = videoObject.file.webkitRelativePath || videoObject.file.name;
+    const fullVideoPath = videoObject.file.name;
 
     log(`Requesting Go backend to generate thumbnail for: ${fullVideoPath}`);
     const thumbnailDataUrl = await GenerateThumbnail(fullVideoPath);
@@ -271,7 +285,7 @@ async function moveSelectedVideos(): Promise<void> {
 
   const absoluteFilePaths = selectedVideos.value.map(video => {
       const relativePath = video.file.webkitRelativePath || video.file.name;
-      return `${baseDirectory.value}/${relativePath}`.replace(/\\/g, '/');
+      return relativePath;
   });
 
   log(`Requesting move from Go for ${absoluteFilePaths.length} files:`);

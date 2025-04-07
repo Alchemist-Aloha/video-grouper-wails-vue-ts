@@ -5,4 +5,4 @@ export function GenerateThumbnail(arg1:string):Promise<string>;
 
 export function MoveVideos(arg1:Array<string>):Promise<void>;
 
-export function SelectDirectory():Promise<string>;
+export function SelectDirectory():Promise<Array<string>>;

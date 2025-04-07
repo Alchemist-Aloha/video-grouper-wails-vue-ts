@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"bytes"
-	"encoding/base64"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -30,23 +31,42 @@ func (a *App) startup(ctx context.Context) {
 
 // --- Bound Go Functions ---
 
-// SelectDirectory (Unchanged)
-func (a *App) SelectDirectory() (string, error) {
+// SelectDirectory scans the selected directory for video files and returns their paths.
+func (a *App) SelectDirectory() ([]string, error) {
 	runtime.LogInfo(a.ctx, "SelectDirectory called from frontend.")
 	selectedDir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Base Video Directory",
 	})
-	// ... (rest of the function is the same)
 	if err != nil {
 		runtime.LogError(a.ctx, fmt.Sprintf("Error selecting directory: %v", err))
-		return "", err
+		return nil, err
 	}
 	if selectedDir == "" {
 		runtime.LogInfo(a.ctx, "Directory selection cancelled.")
-	} else {
-		runtime.LogInfo(a.ctx, fmt.Sprintf("Directory selected: %s", selectedDir))
+		return nil, nil
 	}
-	return selectedDir, nil
+
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Directory selected: %s", selectedDir))
+
+	// Scan the directory for video files
+	var videoFiles []string
+	err = filepath.Walk(selectedDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// Check if the file is a video (basic check based on extension)
+		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".m4v") {
+			videoFiles = append(videoFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Error scanning directory: %v", err))
+		return nil, err
+	}
+
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Found %d video files in directory.", len(videoFiles)))
+	return videoFiles, nil
 }
 
 // MoveVideos takes a list of absolute video file paths and moves them
@@ -64,30 +84,21 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 
 	// --- Determine Output Directory Path ---
 	firstFilePath := absoluteFilePaths[0]
-	baseName := filepath.Base(firstFilePath)
-	ext := filepath.Ext(baseName)
-	outputFolderName := strings.TrimSuffix(baseName, ext) // Folder name is filename without extension
+	// baseName := filepath.Base(firstFilePath)
+	// ext := filepath.Ext(baseName)
+	// outputFolderName := strings.TrimSuffix(baseName, ext) // Folder name is filename without extension
 
-	// Output folder will be created *beside* the parent dir of the first video's original base directory
-	// Assumes firstFilePath is like /path/to/baseDir/maybe/subdir/video.mp4
-	// We need the parent of baseDir. This depends on how baseDir was selected and paths constructed.
-	// Let's assume the paths given are like /path/to/BASE_DIR/video.mp4 or /path/to/BASE_DIR/subdir/video.mp4
-	// We need the parent of BASE_DIR.
-
-	// Find the common base directory implied by the first path.
-	// This assumes SelectDirectory gave us the intended 'base'. We should perhaps pass it explicitly.
-	// Let's stick to the previous logic: create folder beside parent of the first file's immediate dir.
-	// This might not be exactly the parent of the 'selected base directory' if videos are in subdirs.
-	// A more robust approach would be to pass baseDirectory from JS to Go.
-	// Sticking to original logic for now: Parent of the first file's directory.
-	parentDir := filepath.Dir(filepath.Dir(firstFilePath)) // Go up two levels from the file path
-	outputDir := filepath.Join(parentDir, outputFolderName)
-
+	// // Use the parent directory of the first video file as the base directory
+	// parentDir := filepath.Dir(firstFilePath)
+	// runtime.LogInfo(a.ctx, fmt.Sprintf("parentDir: %s", parentDir))
+	// runtime.LogInfo(a.ctx, fmt.Sprintf("outputFolderName: %s", outputFolderName))
+	// outputDir := filepath.Join(parentDir, outputFolderName) // Use filepath.Join for correct path construction
+	outputDir := strings.Join(strings.Split(firstFilePath, "."), "_")
 	runtime.LogInfo(a.ctx, fmt.Sprintf("Target output directory for moved files: %s", outputDir))
 	runtime.EventsEmit(a.ctx, "move-status", fmt.Sprintf("Target directory: %s", outputDir))
 
 	// --- Create Output Directory ---
-	err := os.MkdirAll(outputDir, os.ModePerm) // 0755 permission
+	err := os.Mkdir(outputDir, os.ModePerm) // 0755 permission
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to create output directory '%s': %v", outputDir, err)
 		runtime.LogError(a.ctx, errMsg)
@@ -108,8 +119,6 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 		runtime.EventsEmit(a.ctx, "move-status", fmt.Sprintf("Moving %s...", fileName))
 
 		// Use os.Rename to move the file.
-		// Note: This usually only works reliably on the same filesystem/volume.
-		// For cross-volume moves, a copy + delete approach is needed.
 		err := os.Rename(originalPath, newPath)
 		if err != nil {
 			// Attempt to provide more context on error
@@ -125,7 +134,6 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 			errMsg := fmt.Sprintf("Failed to move file '%s' to '%s': %v", fileName, newPath, err)
 			runtime.LogError(a.ctx, errMsg)
 			runtime.EventsEmit(a.ctx, "move-error", errMsg+". Might be cross-drive issue or permissions.")
-			// Decide whether to stop or continue. Let's stop on first error for simplicity.
 			return fmt.Errorf(errMsg)
 		}
 		runtime.LogInfo(a.ctx, fmt.Sprintf("Successfully moved %s", fileName))
@@ -138,23 +146,6 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 
 	return nil // Success
 }
-
-// GenerateThumbnail generates a thumbnail for a given video file.
-// func (a *App) GenerateThumbnail(videoPath string) (string, error) {
-// 	runtime.LogInfo(a.ctx, fmt.Sprintf("Generating thumbnail for: %s", videoPath))
-// 	thumbnailPath := filepath+"_thumbnail.jpg" // Change this to your desired thumbnail path
-// 	cmd := exec.Command("ffmpeg", "-i", videoPath, "-ss", "00:00:01", "-vframes", "1", thumbnailPath)
-
-// 	err := cmd.Run()
-// 	if err != nil {
-// 		errMsg := fmt.Sprintf("Failed to generate thumbnail for %s: %v", videoPath, err)
-// 		runtime.LogError(a.ctx, errMsg)
-// 		return "", fmt.Errorf(errMsg)
-// 	}
-
-// 	runtime.LogInfo(a.ctx, fmt.Sprintf("Thumbnail generated at: %s", thumbnailPath))
-// 	return thumbnailPath, nil
-// }
 
 // GenerateThumbnail generates a thumbnail for a given video file and returns it as a Data URL.
 func (a *App) GenerateThumbnail(videoPath string) (string, error) {
