@@ -87,9 +87,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
-// *** MODIFIED: Import MoveVideos instead of MergeVideos ***
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
-import { SelectDirectory, MoveVideos } from '../wailsjs/go/main/App';
+import { SelectDirectory, MoveVideos, GenerateThumbnail } from '../wailsjs/go/main/App';
 
 // --- Define Interface for Video Objects ---
 interface VideoItem {
@@ -106,21 +105,19 @@ const videos = reactive<VideoItem[]>([]);
 const isLoading = ref<boolean>(false);
 const logMessages = ref<string[]>([]);
 const baseDirectory = ref<string>('');
-// *** MODIFIED: State variables for moving status ***
 const isMoving = ref<boolean>(false);
 const moveError = ref<string>('');
 const moveSuccessMessage = ref<string>('');
 
 let videoIdCounter: number = 0;
 
-// --- Computed Properties (Unchanged) ---
+// --- Computed Properties ---
 const selectedVideos = computed<VideoItem[]>(() => {
   return videos.filter(video => video.selected);
 });
 
 // --- Wails Event Handling ---
 onMounted(() => {
-    // *** MODIFIED: Event names ***
     EventsOn("move-status", (status: string) => {
         log(`[Go Backend] ${status}`);
     });
@@ -129,7 +126,6 @@ onMounted(() => {
         moveSuccessMessage.value = successMsg;
         isMoving.value = false;
         moveError.value = '';
-        // Clear the list as the files have been moved
         videos.splice(0, videos.length);
     });
     EventsOn("move-error", (errorMsg: string) => {
@@ -141,12 +137,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-    // *** MODIFIED: Event names ***
     EventsOff("move-status");
     EventsOff("move-complete");
     EventsOff("move-error");
 });
-
 
 // --- Methods ---
 
@@ -154,22 +148,20 @@ function log(message: string): void {
   console.log(message);
   const timestamp = new Date().toLocaleTimeString();
   logMessages.value.push(`[${timestamp}] ${message}`);
-  if (logMessages.value.length > 100) { // Keep log size reasonable
+  if (logMessages.value.length > 100) {
       logMessages.value.shift();
   }
 }
 
-// 1. NEW: Call Go to select the base directory
 async function selectBaseDirectory() {
   log("Requesting base directory selection from Go...");
   try {
-    const selectedDir = await SelectDirectory(); // Call bound Go function
+    const selectedDir = await SelectDirectory();
     if (selectedDir) {
       baseDirectory.value = selectedDir;
       log(`Base directory set: ${selectedDir}`);
-      // Clear previous videos if base directory changes
       videos.splice(0, videos.length);
-      logMessages.value = []; // Clear log
+      logMessages.value = [];
     } else {
       log("Directory selection cancelled or failed.");
     }
@@ -179,17 +171,15 @@ async function selectBaseDirectory() {
   }
 }
 
-// 2. Trigger the hidden HTML file input
 function triggerFolderSelect() {
   if (!baseDirectory.value) {
     alert("Please select the base directory first!");
     return;
   }
-  logMessages.value = []; // Clear log on new load
-  folderInput.value?.click(); // Trigger hidden input
+  logMessages.value = [];
+  folderInput.value?.click();
 }
 
-// 3. Handle HTML input file selection (mostly for File objects)
 async function handleFolderSelect(event: Event): Promise<void> {
   const target = event.target as HTMLInputElement;
   const files = target.files;
@@ -206,7 +196,7 @@ async function handleFolderSelect(event: Event): Promise<void> {
 
   log(`HTML input provided ${files.length} items. Filtering for videos...`);
   isLoading.value = true;
-  videos.splice(0, videos.length); // Clear previous videos
+  videos.splice(0, videos.length);
 
   const videoFiles: File[] = Array.from(files).filter(file => file.type.startsWith('video/'));
 
@@ -219,134 +209,55 @@ async function handleFolderSelect(event: Event): Promise<void> {
 
   log(`Found ${videoFiles.length} video files from input. Generating thumbnails...`);
 
-  // Create initial video objects
   videoFiles.forEach(file => {
-    // IMPORTANT: Check if webkitRelativePath exists and seems valid relative to base
-    // This is heuristic - might need adjustment based on testing
     const relativePath = file.webkitRelativePath || file.name;
     log(`Processing file: ${relativePath}`);
 
     videos.push({
       id: videoIdCounter++,
-      file: file, // Keep the File object for thumbnail generation
+      file: file,
       thumbnail: null,
       selected: false,
       error: null,
     });
   });
 
-  // Generate thumbnails in chunks
   await chunkGenerateThumbnails(videos);
 
   isLoading.value = false;
   log("Thumbnail generation complete.");
-  if (target) target.value = ''; // Reset input
+  if (target) target.value = '';
 }
 
-// 4. Generate Thumbnails (Client-side - Unchanged from TypeScript version)
-function generateThumbnail(videoObject: VideoItem): Promise<void> {
-    // ... (Keep the exact same implementation as the previous TypeScript answer)
-    // Ensure it handles errors and updates videoObject.thumbnail / videoObject.error
-  return new Promise<void>((resolve, reject) => { // Specify Promise<void>
-    const videoFile: File = videoObject.file;
-    let videoUrl: string | null = null; // Keep track to revoke later
-    let timeoutId: number | undefined = undefined; // For setTimeout handle
-
-    try {
-        videoUrl = URL.createObjectURL(videoFile);
-    } catch (error) {
-        videoObject.error = `Failed to create Object URL: ${(error as Error).message}`;
-        log(`Error for ${videoFile.name}: ${videoObject.error}`);
-        reject(new Error(videoObject.error));
-        return;
+async function generateThumbnail(videoObject: VideoItem): Promise<void> {
+  try {
+    if (!baseDirectory.value) {
+      throw new Error("Base directory is not set.");
     }
 
-    const videoElement = document.createElement('video');
-    const canvasElement = document.createElement('canvas');
-    const context = canvasElement.getContext('2d');
-    const targetTime: number = 1.0;
+    const videoPath = videoObject.file.webkitRelativePath || videoObject.file.name;
+    const fullVideoPath = `${baseDirectory.value}/${videoPath}`.replace(/\\/g, '/');
 
-    videoElement.preload = 'metadata';
+    log(`Requesting Go backend to generate thumbnail for: ${fullVideoPath}`);
+    const thumbnailDataUrl = await GenerateThumbnail(fullVideoPath);
 
-    const cleanup = () => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        if (videoUrl) URL.revokeObjectURL(videoUrl);
-        videoUrl = null;
-        videoElement.onloadedmetadata = null;
-        videoElement.onseeked = null;
-        videoElement.onerror = null;
-        videoElement.src = '';
-        videoElement.removeAttribute('src');
-        videoElement.load();
-    };
-
-    videoElement.onloadedmetadata = () => {
-      const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
-      canvasElement.width = 160;
-      canvasElement.height = canvasElement.width / aspectRatio;
-      const seekTime = Math.min(targetTime, videoElement.duration || targetTime);
-      videoElement.currentTime = seekTime;
-    };
-
-    videoElement.onseeked = () => {
-      if (!context) {
-        videoObject.error = "Failed to get 2D canvas context.";
-        log(`Error generating thumbnail for ${videoFile.name}: ${videoObject.error}`);
-        cleanup();
-        reject(new Error(videoObject.error));
-        return;
-      }
-      try {
-        context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-        videoObject.thumbnail = canvasElement.toDataURL('image/jpeg', 0.7);
-        cleanup();
-        resolve();
-      } catch (drawError) {
-          videoObject.error = `Failed to draw image on canvas: ${(drawError as Error).message}`;
-          log(`Error generating thumbnail for ${videoFile.name}: ${videoObject.error}`);
-          cleanup();
-          reject(new Error(videoObject.error));
-      }
-    };
-
-    videoElement.onerror = (e: Event | string) => {
-      const errorMsg = (typeof e === 'string') ? e : (videoElement.error?.message || 'Unknown video loading error');
-      videoObject.error = `Video load/seek failed: ${errorMsg}`;
-      log(`Error generating thumbnail for ${videoFile.name}: ${videoObject.error}`);
-      cleanup();
-      reject(new Error(videoObject.error));
-    };
-
-    timeoutId = window.setTimeout(() => {
-        if (!videoObject.thumbnail && !videoObject.error) {
-            videoObject.error = "Thumbnail generation timed out.";
-            log(`Error generating thumbnail for ${videoFile.name}: Timeout.`);
-            cleanup();
-            reject(new Error(videoObject.error));
-        }
-    }, 30000);
-
-    videoElement.src = videoUrl;
-
-  }).catch((error: Error) => {
-      if (!videoObject.error) {
-          videoObject.error = error.message || "Unknown thumbnail generation error.";
-          log(`Caught error for ${videoObject.file.name}: ${videoObject.error}`);
-      }
-  });
-}
-
-// Generate thumbnails in chunks
-async function chunkGenerateThumbnails(videoArray: VideoItem[], chunkSize = 5) {
-  for (let i = 0; i < videoArray.length; i += chunkSize) {
-    const chunk = videoArray.slice(i, i + chunkSize);
-    await Promise.all(chunk.map(generateThumbnail));
-    // Let the UI breathe briefly
-    await new Promise(res => setTimeout(res, 0));
+    // Ensure the thumbnail path is set correctly
+    videoObject.thumbnail = thumbnailDataUrl;
+    log(`Thumbnail generated for ${videoObject.file.name}`);
+  } catch (error: any) {
+    videoObject.error = `Failed to generate thumbnail: ${error.message}`;
+    log(`Error generating thumbnail for ${videoObject.file.name}: ${videoObject.error}`);
   }
 }
 
-// *** MODIFIED: Function to Move Videos ***
+async function chunkGenerateThumbnails(videoArray: VideoItem[], chunkSize = 2) {
+  for (let i = 0; i < videoArray.length; i += chunkSize) {
+    const chunk = videoArray.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(generateThumbnail));
+    await new Promise(res => setTimeout(res, 0)); // Let the UI breathe
+  }
+}
+
 async function moveSelectedVideos(): Promise<void> {
   if (selectedVideos.value.length === 0) {
     log("No videos selected to move.");
@@ -358,39 +269,32 @@ async function moveSelectedVideos(): Promise<void> {
       return;
   }
 
-  // Construct absolute paths (Unchanged logic)
   const absoluteFilePaths = selectedVideos.value.map(video => {
       const relativePath = video.file.webkitRelativePath || video.file.name;
-      // Go backend should use filepath.Join for robustness
       return `${baseDirectory.value}/${relativePath}`.replace(/\\/g, '/');
   });
 
   log(`Requesting move from Go for ${absoluteFilePaths.length} files:`);
   absoluteFilePaths.forEach(p => log(` - ${p}`));
 
-  // *** MODIFIED: Update status variables ***
   isMoving.value = true;
   moveError.value = '';
   moveSuccessMessage.value = '';
 
   try {
-    // *** MODIFIED: Call MoveVideos Go function ***
     await MoveVideos(absoluteFilePaths);
     log("Move request sent to Go backend. Waiting for response...");
-    // Success/error message handling moved to event listeners ("move-complete", "move-error")
-
   } catch (err: any) {
     const errorText = `Failed to initiate move: ${err}`;
     log(`Error calling Go MoveVideos function: ${errorText}`);
     moveError.value = errorText;
-    isMoving.value = false; // Reset moving state on immediate call failure
+    isMoving.value = false;
   }
 }
 
 </script>
 
 <style scoped>
-/* STYLES MOSTLY UNCHANGED - Added minor styles */
 .video-manager {
   display: flex;
   flex-direction: column;
@@ -474,7 +378,7 @@ button:hover:not(:disabled) {
   flex-grow: 1;
   word-break: break-all;
   padding-right: 10px;
-  color: #333; /* Slightly dimmer text for path */
+  color: #333;
 }
 
 code {
@@ -482,5 +386,25 @@ code {
     padding: 2px 4px;
     border-radius: 3px;
     font-family: monospace;
+}
+
+.thumbnail {
+  width: 100px; /* Set the desired width */
+  height: 100px; /* Set the desired height */
+  object-fit: cover; /* Ensures the image fits within the dimensions without distortion */
+  border-radius: 4px; /* Optional: Add rounded corners */
+  margin-bottom: 8px; /* Add spacing below the thumbnail */
+}
+
+.thumbnail.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ccc;
+  color: #666;
+  font-size: 12px;
+  width: 100px;
+  height: 100px;
+  border-radius: 4px;
 }
 </style>

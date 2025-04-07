@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	// "os/exec" // No longer needed for ffmpeg
+	"os/exec"
 	"path/filepath"
 	"strings"
-
+	"bytes"
+	"encoding/base64"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -136,4 +137,78 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 	runtime.EventsEmit(a.ctx, "move-complete", successMsg) // Emit final success message
 
 	return nil // Success
+}
+
+// GenerateThumbnail generates a thumbnail for a given video file.
+// func (a *App) GenerateThumbnail(videoPath string) (string, error) {
+// 	runtime.LogInfo(a.ctx, fmt.Sprintf("Generating thumbnail for: %s", videoPath))
+// 	thumbnailPath := filepath+"_thumbnail.jpg" // Change this to your desired thumbnail path
+// 	cmd := exec.Command("ffmpeg", "-i", videoPath, "-ss", "00:00:01", "-vframes", "1", thumbnailPath)
+
+// 	err := cmd.Run()
+// 	if err != nil {
+// 		errMsg := fmt.Sprintf("Failed to generate thumbnail for %s: %v", videoPath, err)
+// 		runtime.LogError(a.ctx, errMsg)
+// 		return "", fmt.Errorf(errMsg)
+// 	}
+
+// 	runtime.LogInfo(a.ctx, fmt.Sprintf("Thumbnail generated at: %s", thumbnailPath))
+// 	return thumbnailPath, nil
+// }
+
+// GenerateThumbnail generates a thumbnail for a given video file and returns it as a Data URL.
+func (a *App) GenerateThumbnail(videoPath string) (string, error) {
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Generating thumbnail Data URL for: %s", videoPath))
+
+	// ffmpeg command arguments:
+	// -i videoPath : Input video file
+	// -ss 00:00:01 : Seek to the 1-second mark (adjust if needed)
+	// -vframes 1  : Extract exactly one video frame
+	// -f image2pipe : Force the output format to be suitable for piping (image sequence)
+	// -c:v mjpeg    : Set the video codec for the output image to MJPEG (JPEG)
+	// -           : Output to stdout instead of a file
+	cmd := exec.Command("ffmpeg", "-i", videoPath, "-ss", "00:00:01", "-vframes", "1", "-f", "image2pipe", "-c:v", "mjpeg", "-")
+
+	// Create buffers to capture stdout and stderr
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb // Capture standard output
+	cmd.Stderr = &errb // Capture standard error
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		// If ffmpeg fails, log the error and stderr content for diagnostics
+		errMsg := fmt.Sprintf("ffmpeg execution failed for %s: %v. Stderr: %s", videoPath, err, errb.String())
+		runtime.LogError(a.ctx, errMsg)
+		return "", fmt.Errorf(errMsg) // Return an empty string and the error
+	}
+
+	// Get the raw image bytes from the stdout buffer
+	imageBytes := outb.Bytes()
+
+	// Check if ffmpeg actually produced any output
+	if len(imageBytes) == 0 {
+		errMsg := fmt.Sprintf("ffmpeg produced no thumbnail data for %s. Stderr: %s", videoPath, errb.String())
+		// Log as warning or error based on whether stderr had content
+		if errb.Len() > 0 {
+			runtime.LogWarning(a.ctx, errMsg) // May be warnings in stderr even on success
+		} else {
+			runtime.LogError(a.ctx, errMsg) // No output and no stderr likely means a problem
+		}
+		// Return error as we expect image data
+		return "", fmt.Errorf("ffmpeg produced no thumbnail data for video: %s", videoPath)
+	}
+
+	// Encode the raw image bytes to a Base64 string
+	encodedString := base64.StdEncoding.EncodeToString(imageBytes)
+
+	// Format the Base64 string as a JPEG Data URL
+	// The MIME type "image/jpeg" matches the "-c:v mjpeg" ffmpeg argument.
+	// If you change the codec (e.g., to png), update the MIME type accordingly.
+	dataURL := fmt.Sprintf("data:image/jpeg;base64,%s", encodedString)
+
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Successfully generated thumbnail Data URL for: %s (Data URL length: %d)", videoPath, len(dataURL)))
+
+	// Return the Data URL string and nil error
+	return dataURL, nil
 }

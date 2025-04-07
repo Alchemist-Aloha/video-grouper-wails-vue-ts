@@ -15,7 +15,6 @@ func main() {
 	// Create an instance of the app structure
 	app := NewApp() // Assumes app.go has NewApp()
 
-	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "Video Merger",
 		Width:  1024,
