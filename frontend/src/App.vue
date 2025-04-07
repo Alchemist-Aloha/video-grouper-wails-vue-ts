@@ -108,6 +108,7 @@ const baseDirectory = ref<string>('');
 const isMoving = ref<boolean>(false);
 const moveError = ref<string>('');
 const moveSuccessMessage = ref<string>('');
+const movingVideoIds = ref<number[]>([]); // Keep track of IDs being moved
 
 let videoIdCounter: number = 0;
 
@@ -126,13 +127,21 @@ onMounted(() => {
         moveSuccessMessage.value = successMsg;
         isMoving.value = false;
         moveError.value = '';
-        videos.splice(0, videos.length);
+        // Remove moved videos from the list
+        movingVideoIds.value.forEach(movedId => {
+            const index = videos.findIndex(v => v.id === movedId);
+            if (index !== -1) {
+                videos.splice(index, 1);
+            }
+        });
+        movingVideoIds.value = []; // Clear the tracking array
     });
     EventsOn("move-error", (errorMsg: string) => {
         log(`[Go Backend] Move Error: ${errorMsg}`);
         moveError.value = errorMsg;
         isMoving.value = false;
         moveSuccessMessage.value = '';
+        movingVideoIds.value = []; // Clear the tracking array on error too
     });
 });
 
@@ -283,10 +292,15 @@ async function moveSelectedVideos(): Promise<void> {
       return;
   }
 
+  // Store the IDs of the videos we are about to move
+  movingVideoIds.value = selectedVideos.value.map(video => video.id);
+
   const absoluteFilePaths = selectedVideos.value.map(video => {
-      const relativePath = video.file.webkitRelativePath || video.file.name;
-      return relativePath;
+      // Use the full path stored when loading videos
+      const fullPath = video.file.name; // Assuming file.name holds the full path from SelectDirectory
+      return fullPath;
   });
+
 
   log(`Requesting move from Go for ${absoluteFilePaths.length} files:`);
   absoluteFilePaths.forEach(p => log(` - ${p}`));
@@ -303,6 +317,7 @@ async function moveSelectedVideos(): Promise<void> {
     log(`Error calling Go MoveVideos function: ${errorText}`);
     moveError.value = errorText;
     isMoving.value = false;
+    movingVideoIds.value = []; // Clear IDs if the call itself fails
   }
 }
 
