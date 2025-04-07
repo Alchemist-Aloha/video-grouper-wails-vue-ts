@@ -235,9 +235,8 @@ async function handleFolderSelect(event: Event): Promise<void> {
     });
   });
 
-  // Generate thumbnails (client-side, unchanged)
-  const thumbnailPromises: Promise<void>[] = videos.map(video => generateThumbnail(video));
-  await Promise.allSettled(thumbnailPromises);
+  // Generate thumbnails in chunks
+  await chunkGenerateThumbnails(videos);
 
   isLoading.value = false;
   log("Thumbnail generation complete.");
@@ -325,7 +324,7 @@ function generateThumbnail(videoObject: VideoItem): Promise<void> {
             cleanup();
             reject(new Error(videoObject.error));
         }
-    }, 10000);
+    }, 30000);
 
     videoElement.src = videoUrl;
 
@@ -335,6 +334,16 @@ function generateThumbnail(videoObject: VideoItem): Promise<void> {
           log(`Caught error for ${videoObject.file.name}: ${videoObject.error}`);
       }
   });
+}
+
+// Generate thumbnails in chunks
+async function chunkGenerateThumbnails(videoArray: VideoItem[], chunkSize = 5) {
+  for (let i = 0; i < videoArray.length; i += chunkSize) {
+    const chunk = videoArray.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(generateThumbnail));
+    // Let the UI breathe briefly
+    await new Promise(res => setTimeout(res, 0));
+  }
 }
 
 // *** MODIFIED: Function to Move Videos ***
@@ -382,15 +391,55 @@ async function moveSelectedVideos(): Promise<void> {
 
 <style scoped>
 /* STYLES MOSTLY UNCHANGED - Added minor styles */
-.video-manager { /* ... */ }
-button { /* ... */ }
-button:disabled { /* ... */ }
-button:hover:not(:disabled) { /* ... */ }
-.loading { /* ... */ }
-.video-list-container { /* ... */ }
-.video-list { /* ... */ }
-.video-item { /* ... */ }
-/* ... rest of the styles ... */
+.video-manager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #007bff;
+  color: white;
+}
+
+.loading {
+  font-size: 18px;
+  color: #007bff;
+}
+
+.video-list-container {
+  margin-top: 20px;
+  width: 100%;
+}
+.video-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+}
+
+.video-item {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fafafa;
+  padding: 10px;
+  text-align: center;
+}
 
 .warning {
     color: #856404;

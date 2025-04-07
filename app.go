@@ -48,8 +48,6 @@ func (a *App) SelectDirectory() (string, error) {
 	return selectedDir, nil
 }
 
-// *** MODIFIED: Replaced MergeVideos with MoveVideos ***
-
 // MoveVideos takes a list of absolute video file paths and moves them
 // into a new directory named after the first video.
 func (a *App) MoveVideos(absoluteFilePaths []string) error {
@@ -70,17 +68,17 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 	outputFolderName := strings.TrimSuffix(baseName, ext) // Folder name is filename without extension
 
 	// Output folder will be created *beside* the parent dir of the first video's original base directory
-    // Assumes firstFilePath is like /path/to/baseDir/maybe/subdir/video.mp4
-    // We need the parent of baseDir. This depends on how baseDir was selected and paths constructed.
-    // Let's assume the paths given are like /path/to/BASE_DIR/video.mp4 or /path/to/BASE_DIR/subdir/video.mp4
-    // We need the parent of BASE_DIR.
+	// Assumes firstFilePath is like /path/to/baseDir/maybe/subdir/video.mp4
+	// We need the parent of baseDir. This depends on how baseDir was selected and paths constructed.
+	// Let's assume the paths given are like /path/to/BASE_DIR/video.mp4 or /path/to/BASE_DIR/subdir/video.mp4
+	// We need the parent of BASE_DIR.
 
-    // Find the common base directory implied by the first path.
-    // This assumes SelectDirectory gave us the intended 'base'. We should perhaps pass it explicitly.
-    // Let's stick to the previous logic: create folder beside parent of the first file's immediate dir.
-    // This might not be exactly the parent of the 'selected base directory' if videos are in subdirs.
-    // A more robust approach would be to pass baseDirectory from JS to Go.
-    // Sticking to original logic for now: Parent of the first file's directory.
+	// Find the common base directory implied by the first path.
+	// This assumes SelectDirectory gave us the intended 'base'. We should perhaps pass it explicitly.
+	// Let's stick to the previous logic: create folder beside parent of the first file's immediate dir.
+	// This might not be exactly the parent of the 'selected base directory' if videos are in subdirs.
+	// A more robust approach would be to pass baseDirectory from JS to Go.
+	// Sticking to original logic for now: Parent of the first file's directory.
 	parentDir := filepath.Dir(filepath.Dir(firstFilePath)) // Go up two levels from the file path
 	outputDir := filepath.Join(parentDir, outputFolderName)
 
@@ -117,7 +115,7 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 			_, statErr := os.Stat(originalPath)
 			if os.IsNotExist(statErr) {
 				errMsg := fmt.Sprintf("Failed to move file '%s': Source file not found.", fileName)
-                 runtime.LogError(a.ctx, errMsg)
+				runtime.LogError(a.ctx, errMsg)
 				runtime.EventsEmit(a.ctx, "move-error", errMsg)
 				return fmt.Errorf(errMsg) // Stop on critical error
 			}
@@ -125,7 +123,7 @@ func (a *App) MoveVideos(absoluteFilePaths []string) error {
 			// Generic rename error
 			errMsg := fmt.Sprintf("Failed to move file '%s' to '%s': %v", fileName, newPath, err)
 			runtime.LogError(a.ctx, errMsg)
-			runtime.EventsEmit(a.ctx, "move-error", errMsg + ". Might be cross-drive issue or permissions.")
+			runtime.EventsEmit(a.ctx, "move-error", errMsg+". Might be cross-drive issue or permissions.")
 			// Decide whether to stop or continue. Let's stop on first error for simplicity.
 			return fmt.Errorf(errMsg)
 		}
