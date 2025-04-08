@@ -10,15 +10,8 @@
       Please select the base directory containing your videos first.
     </p>
 
-    <input
-      type="file"
-      webkitdirectory
-      multiple
-      @change="handleFolderSelect"
-      ref="folderInput"
-      style="display: none;"
-      accept="video/*"
-    />
+    <input type="file" webkitdirectory multiple @change="handleFolderSelect" ref="folderInput" style="display: none;"
+      accept="video/*" />
     <button @click="triggerFolderSelect" :disabled="!baseDirectory">
       Load Videos from Selected Directory
     </button>
@@ -28,38 +21,26 @@
     <div v-if="videos.length > 0" class="video-list-container">
       <h3>Loaded Videos:</h3>
       <ul class="video-list">
-         <li v-for="video in videos" :key="video.id" class="video-item">
-          <input
-            type="checkbox"
-            :id="'video-' + video.id"
-            v-model="video.selected"
-          />
+        <li v-for="video in videos" :key="video.id" class="video-item">
+          <input type="checkbox" :id="'video-' + video.id" v-model="video.selected" />
           <label :for="'video-' + video.id">
-            <img
-              v-if="video.thumbnail"
-              :src="video.thumbnail"
-              alt="Video thumbnail"
-              class="thumbnail"
-            />
+            <img v-if="video.thumbnail" :src="video.thumbnail" alt="Video thumbnail" class="thumbnail" />
             <div v-else class="thumbnail placeholder">No thumbnail</div>
             <span class="filename">
-                {{ video.file.webkitRelativePath || video.file.name }}
+              {{ video.file.webkitRelativePath || video.file.name }}
             </span>
             <span v-if="video.error" class="error-tag">Error</span>
           </label>
         </li>
       </ul>
 
-      <button
-        @click="moveSelectedVideos"
-        :disabled="selectedVideos.length === 0 || !baseDirectory || isMoving"
-      >
+      <button @click="moveSelectedVideos" :disabled="selectedVideos.length === 0 || !baseDirectory || isMoving">
         {{ isMoving ? 'Moving...' : 'Move Selected Videos' }}
       </button>
       <p v-if="selectedVideos.length > 0">
         Selected {{ selectedVideos.length }} video(s).
       </p>
-       <p v-if="moveError" class="error-message">
+      <p v-if="moveError" class="error-message">
         Move Error: {{ moveError }}
       </p>
       <p v-if="moveSuccessMessage" class="success-message">
@@ -68,8 +49,8 @@
     </div>
 
     <div v-if="logMessages.length > 0" class="log-output">
-        <h3>Log / Status:</h3>
-        <pre>{{ logMessages.join('\n') }}</pre>
+      <h3>Log / Status:</h3>
+      <pre>{{ logMessages.join('\n') }}</pre>
     </div>
 
     <div class="explanation">
@@ -78,7 +59,8 @@
         <li>Select the Base Directory first. Then Load videos.</li>
         <li>Thumbnails are generated in the browser.</li>
         <li>Clicking "Move" will move the selected original video files into a new subfolder.</li>
-        <li>The new folder (named after the first selected video) will be created inside the *parent* of your selected Base Directory.</li>
+        <li>The new folder (named after the first selected video) will be created inside the *parent* of your selected
+          Base Directory.</li>
         <li>**Warning:** This action moves the original files. Ensure you have backups if needed.</li>
       </ul>
     </div>
@@ -119,36 +101,36 @@ const selectedVideos = computed<VideoItem[]>(() => {
 
 // --- Wails Event Handling ---
 onMounted(() => {
-    EventsOn("move-status", (status: string) => {
-        log(`[Go Backend] ${status}`);
+  EventsOn("move-status", (status: string) => {
+    log(`[Go Backend] ${status}`);
+  });
+  EventsOn("move-complete", (successMsg: string) => {
+    log(`[Go Backend] ${successMsg}`);
+    moveSuccessMessage.value = successMsg;
+    isMoving.value = false;
+    moveError.value = '';
+    // Remove moved videos from the list
+    movingVideoIds.value.forEach(movedId => {
+      const index = videos.findIndex(v => v.id === movedId);
+      if (index !== -1) {
+        videos.splice(index, 1);
+      }
     });
-    EventsOn("move-complete", (successMsg: string) => {
-        log(`[Go Backend] ${successMsg}`);
-        moveSuccessMessage.value = successMsg;
-        isMoving.value = false;
-        moveError.value = '';
-        // Remove moved videos from the list
-        movingVideoIds.value.forEach(movedId => {
-            const index = videos.findIndex(v => v.id === movedId);
-            if (index !== -1) {
-                videos.splice(index, 1);
-            }
-        });
-        movingVideoIds.value = []; // Clear the tracking array
-    });
-    EventsOn("move-error", (errorMsg: string) => {
-        log(`[Go Backend] Move Error: ${errorMsg}`);
-        moveError.value = errorMsg;
-        isMoving.value = false;
-        moveSuccessMessage.value = '';
-        movingVideoIds.value = []; // Clear the tracking array on error too
-    });
+    movingVideoIds.value = []; // Clear the tracking array
+  });
+  EventsOn("move-error", (errorMsg: string) => {
+    log(`[Go Backend] Move Error: ${errorMsg}`);
+    moveError.value = errorMsg;
+    isMoving.value = false;
+    moveSuccessMessage.value = '';
+    movingVideoIds.value = []; // Clear the tracking array on error too
+  });
 });
 
 onBeforeUnmount(() => {
-    EventsOff("move-status");
-    EventsOff("move-complete");
-    EventsOff("move-error");
+  EventsOff("move-status");
+  EventsOff("move-complete");
+  EventsOff("move-error");
 });
 
 // --- Methods ---
@@ -158,7 +140,7 @@ function log(message: string): void {
   const timestamp = new Date().toLocaleTimeString();
   logMessages.value.push(`[${timestamp}] ${message}`);
   if (logMessages.value.length > 100) {
-      logMessages.value.shift();
+    logMessages.value.shift();
   }
 }
 
@@ -211,7 +193,7 @@ async function handleFolderSelect(event: Event): Promise<void> {
     log("No files selected in the input.");
     return;
   }
-   if (!baseDirectory.value) {
+  if (!baseDirectory.value) {
     log("Error: Base directory not set before loading files.");
     alert("Error: Base directory not set. Please select it first.");
     return;
@@ -224,10 +206,10 @@ async function handleFolderSelect(event: Event): Promise<void> {
   const videoFiles: File[] = Array.from(files).filter(file => file.type.startsWith('video/'));
 
   if (videoFiles.length === 0) {
-      log("No video files found matching the input files.");
-      isLoading.value = false;
-      if (target) target.value = '';
-      return;
+    log("No video files found matching the input files.");
+    isLoading.value = false;
+    if (target) target.value = '';
+    return;
   }
 
   log(`Found ${videoFiles.length} video files from input. Generating thumbnails...`);
@@ -287,18 +269,18 @@ async function moveSelectedVideos(): Promise<void> {
     return;
   }
   if (!baseDirectory.value) {
-      log("Error: Base directory not set.");
-      alert("Error: Base directory is not set. Please select it first.");
-      return;
+    log("Error: Base directory not set.");
+    alert("Error: Base directory is not set. Please select it first.");
+    return;
   }
 
   // Store the IDs of the videos we are about to move
   movingVideoIds.value = selectedVideos.value.map(video => video.id);
 
   const absoluteFilePaths = selectedVideos.value.map(video => {
-      // Use the full path stored when loading videos
-      const fullPath = video.file.name; // Assuming file.name holds the full path from SelectDirectory
-      return fullPath;
+    // Use the full path stored when loading videos
+    const fullPath = video.file.name; // Assuming file.name holds the full path from SelectDirectory
+    return fullPath;
   });
 
 
@@ -356,6 +338,7 @@ button:hover:not(:disabled) {
   margin-top: 20px;
   width: 100%;
 }
+
 .video-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -375,31 +358,31 @@ button:hover:not(:disabled) {
 }
 
 .warning {
-    color: #856404;
-    background-color: #fff3cd;
-    border: 1px solid #ffeeba;
-    padding: 5px 10px;
-    border-radius: 4px;
-    margin: 10px 0;
-    display: inline-block;
+  color: #856404;
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  display: inline-block;
 }
 
 .error-message {
-    color: #D8000C;
-    background-color: #FFD2D2;
-    border: 1px solid #ffbaba;
-    padding: 10px;
-    border-radius: 4px;
-    margin-top: 10px;
+  color: #D8000C;
+  background-color: #FFD2D2;
+  border: 1px solid #ffbaba;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
 }
 
 .success-message {
-    color: #4F8A10;
-    background-color: #DFF2BF;
-     border: 1px solid #bdeca3;
-    padding: 10px;
-    border-radius: 4px;
-    margin-top: 10px;
+  color: #4F8A10;
+  background-color: #DFF2BF;
+  border: 1px solid #bdeca3;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
 }
 
 .filename {
@@ -411,18 +394,23 @@ button:hover:not(:disabled) {
 }
 
 code {
-    background-color: #eee;
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-family: monospace;
+  background-color: #eee;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
 }
 
 .thumbnail {
-  width: 100px; /* Set the desired width */
-  height: 100px; /* Set the desired height */
-  object-fit: cover; /* Ensures the image fits within the dimensions without distortion */
-  border-radius: 4px; /* Optional: Add rounded corners */
-  margin-bottom: 8px; /* Add spacing below the thumbnail */
+  width: 100px;
+  /* Set the desired width */
+  height: 100px;
+  /* Set the desired height */
+  object-fit: cover;
+  /* Ensures the image fits within the dimensions without distortion */
+  border-radius: 4px;
+  /* Optional: Add rounded corners */
+  margin-bottom: 8px;
+  /* Add spacing below the thumbnail */
 }
 
 .thumbnail.placeholder {
